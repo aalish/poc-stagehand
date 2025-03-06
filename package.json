@@ -1,0 +1,19 @@
+{
+  "name": "nike-bot-llm",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.86.1",
+    "puppeteer": "^24.3.1",
+    "stagehand": "^1.0.1"
+  },
+  "description": ""
+}
