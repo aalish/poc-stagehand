@@ -49,7 +49,7 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
 
   await bot.click("//span[text()='Agregar al Carrito']");
   console.log("✅ Clicked 'Add to Bag'.");
-
+  await new Promise(res => setTimeout(res, 6000));
   await page.goto('https://www.nike.com.ar/checkout#/orderform', {
     waitUntil: 'networkidle0',
     timeout: 60000
@@ -71,14 +71,20 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
   );
   function cleanJSONString(text) {
     try {
-      const obj = (new Function(`return (${text.trim()})`))();
+      if (typeof text !== 'string') {
+        console.warn("⚠️ Input was not a string. Converting:", text);
+        text = JSON.stringify(text);
+      }
+  
+      text = text.trim();
+  
+      const obj = (new Function(`return (${text})`))();
       return obj;
     } catch (error) {
       console.error("❌ Failed to parse Claude's object:\n", text, "\nError:", error.message);
       return null;
     }
   }
-  
   
   // Calculate XPath for each input
   const formInputsWithXPaths = await Promise.all(
