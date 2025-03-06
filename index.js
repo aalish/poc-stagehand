@@ -69,7 +69,17 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
       })()
     }))
   );
-
+  function cleanJSONString(text) {
+    try {
+      const obj = (new Function(`return (${text.trim()})`))();
+      return obj;
+    } catch (error) {
+      console.error("❌ Failed to parse Claude's object:\n", text, "\nError:", error.message);
+      return null;
+    }
+  }
+  
+  
   // Calculate XPath for each input
   const formInputsWithXPaths = await Promise.all(
     formInputs.map(async (input) => {
@@ -91,7 +101,17 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
 
   console.log("✅ Extracted Form Inputs:", formInputsWithXPaths);
 
-  const xpaths = await findFormFieldXPaths(formInputsWithXPaths);
+  const rawXPaths = await findFormFieldXPaths(formInputsWithXPaths);
+  const xpaths = cleanJSONString(rawXPaths);
+  
+  if (!xpaths) {
+    console.error("❌ Could not parse XPaths from Claude.");
+    await browser.close();
+    process.exit(1);
+  }
+  
+  console.log("✅ Cleaned Form XPaths:", xpaths);
+  
 
   console.log("✅ Mapped Form XPaths from Claude:", xpaths);
 
@@ -102,13 +122,27 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
     address: "123 Main St",
     document: "12345678"
   };
-
+  
   for (const [field, xpath] of Object.entries(xpaths)) {
     if (xpath && formData[field]) {
-      const [input] = await page.$x(xpath);
-      if (input) await input.type(formData[field]);
+      try {
+        const [input] = await page.$x(xpath);
+        if (input) {
+          await input.focus();
+          await input.click({ clickCount: 3 }); // select existing value
+          await input.type(formData[field], { delay: 50 }); // slow typing to avoid bot detection
+          console.log(`✅ Filled ${field} at ${xpath}`);
+        } else {
+          console.warn(`⚠️ Could not find input for ${field} at ${xpath}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error filling ${field}:`, error);
+      }
+    } else {
+      console.warn(`⚠️ No XPath from Claude for ${field}`);
     }
   }
+  
 
   await new Promise(res => setTimeout(res, 6000000));
   await browser.close();
