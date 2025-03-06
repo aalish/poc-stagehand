@@ -21,9 +21,9 @@ const StagehandConfig: ConstructorParams = {
   enableCaching: true /* Enable caching functionality */,
   browserbaseSessionID:
     undefined /* Session ID for resuming Browserbase sessions */,
-  modelName: "gpt-4o" /* Name of the model to use */,
+  modelName: "claude-3-5-sonnet-latest" /* Name of the model to use */,
   modelClientOptions: {
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.ANTHROPIC_API_KEY,
   } /* Configuration options for the model client */,
   actTimeoutMs: 60_000,
 };
