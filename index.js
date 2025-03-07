@@ -5,6 +5,21 @@ const { findFormFieldXPaths } = require('./llm');
 
 const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5457-061/p";
 
+function parseClaudeObject(text) {
+  try {
+    if (typeof text !== 'string') {
+      console.warn("⚠️ Input was not a string. Converting:", text);
+      text = JSON.stringify(text);
+    }
+    text = text.trim();
+    const obj = (new Function(`return (${text})`))();
+    return obj;
+  } catch (error) {
+    console.error("❌ Failed to parse Claude's object:\n", text, "\nError:", error.message);
+    return null;
+  }
+}
+
 (async () => {
   const browser = await puppeteer.launch({
     headless: false,
@@ -15,16 +30,17 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
     ]
   });
 
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1920, height: 1080 });
+  const pageInstance = await browser.newPage();
+  await pageInstance.setViewport({ width: 1920, height: 1080 });
 
-  const bot = new BaseBot(page);
+  const bot = new BaseBot(pageInstance); // use for bot actions, but keep realPage safe
+  const realPage = pageInstance; // LOCK the original Puppeteer Page
 
   await bot.loadPage(PRODUCT_URL);
 
-  await page.waitForSelector("span.selecciona-talle-plain", { timeout: 15000 });
+  await realPage.waitForSelector("span.selecciona-talle-plain", { timeout: 15000 });
 
-  const text = await page.$eval("span.selecciona-talle-plain", el => el.innerText);
+  const text = await realPage.$eval("span.selecciona-talle-plain", el => el.innerText);
   if (text.includes("Seleccionar Talle (US)")) {
     console.log("✅ Text appeared!");
   } else {
@@ -50,13 +66,13 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
   await bot.click("//span[text()='Agregar al Carrito']");
   console.log("✅ Clicked 'Add to Bag'.");
   await new Promise(res => setTimeout(res, 6000));
-  await page.goto('https://www.nike.com.ar/checkout#/orderform', {
+
+  await realPage.goto('https://www.nike.com.ar/checkout#/orderform', {
     waitUntil: 'networkidle0',
     timeout: 60000
   });
 
-  // Extract form inputs with attributes
-  const formInputs = await page.$$eval('form input', inputs =>
+  const formInputs = await realPage.$$eval('form input', inputs =>
     inputs.map(input => ({
       type: input.type || null,
       id: input.id || null,
@@ -69,27 +85,10 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
       })()
     }))
   );
-  function cleanJSONString(text) {
-    try {
-      if (typeof text !== 'string') {
-        console.warn("⚠️ Input was not a string. Converting:", text);
-        text = JSON.stringify(text);
-      }
-  
-      text = text.trim();
-  
-      const obj = (new Function(`return (${text})`))();
-      return obj;
-    } catch (error) {
-      console.error("❌ Failed to parse Claude's object:\n", text, "\nError:", error.message);
-      return null;
-    }
-  }
-  
-  // Calculate XPath for each input
+
   const formInputsWithXPaths = await Promise.all(
     formInputs.map(async (input) => {
-      const xpath = await page.evaluate((id) => {
+      const xpath = await realPage.evaluate((id) => {
         const el = document.getElementById(id);
         if (!el) return null;
         const idx = (sib, name) => sib ? 1 + idx(sib.previousElementSibling, name) : 1;
@@ -108,18 +107,28 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
   console.log("✅ Extracted Form Inputs:", formInputsWithXPaths);
 
   const rawXPaths = await findFormFieldXPaths(formInputsWithXPaths);
-  const xpaths = cleanJSONString(rawXPaths);
-  
+  // const xpaths = parseClaudeObject(rawXPaths);
+  const xpaths = `{
+  name: '//*[@id="client-first-name"]',
+  email: '//*[@id="client-email"]',
+  phone: '//*[@id="client-phone1"]',
+  address: '//*[@id="summary-postal-code"]',
+  document: '//*[@id="client-document"]'
+}
+`
   if (!xpaths) {
     console.error("❌ Could not parse XPaths from Claude.");
     await browser.close();
     process.exit(1);
   }
-  
-  console.log("✅ Cleaned Form XPaths:", xpaths);
-  
 
-  console.log("✅ Mapped Form XPaths from Claude:", xpaths);
+  console.log("✅ Cleaned Form XPaths:", xpaths);
+
+  // if (typeof realPage.$x !== 'function') {
+  //   console.error('❌ realPage.$x is not available.');
+  //   await browser.close();
+  //   process.exit(1);
+  // }
 
   const formData = {
     name: "John Doe",
@@ -128,28 +137,64 @@ const PRODUCT_URL = "https://www.nike.com.ar/air-jordan-11-retro-bred-velvet-db5
     address: "123 Main St",
     document: "12345678"
   };
-  
+
+  // for (const [field, xpath] of Object.entries(xpaths)) {
+  //   if (xpath && formData[field]) {
+  //     try {
+  //       const [input] = await realPage.$x(xpath);
+  //       if (input) {
+  //         await input.focus();
+  //         await input.click({ clickCount: 3 });
+  //         await input.type(formData[field], { delay: 50 });
+  //         console.log(`✅ Filled ${field} at ${xpath}`);
+  //       } else {
+  //         console.warn(`⚠️ Could not find input for ${field} at ${xpath}`);
+  //       }
+  //     } catch (error) {
+  //       console.error(`❌ Error filling ${field}:`, error);
+  //     }
+  //   } else {
+  //     console.warn(`⚠️ No XPath from Claude for ${field}`);
+  //   }
+  // }
+  await realPage.bringToFront();
+  console.log("✅ Brought page to front");
+  console.log(xpaths)
+  console.log("++++++++++++++++++++++++++++++++")
+  console.log(formData)
+  await new Promise(res => setTimeout(res, 6000000));
+
   for (const [field, xpath] of Object.entries(xpaths)) {
-    if (xpath && formData[field]) {
-      try {
-        const [input] = await page.$x(xpath);
-        if (input) {
-          await input.focus();
-          await input.click({ clickCount: 3 }); // select existing value
-          await input.type(formData[field], { delay: 50 }); // slow typing to avoid bot detection
-          console.log(`✅ Filled ${field} at ${xpath}`);
-        } else {
-          console.warn(`⚠️ Could not find input for ${field} at ${xpath}`);
-        }
-      } catch (error) {
-        console.error(`❌ Error filling ${field}:`, error);
+    const value = formData[field];
+    if (!xpath) {
+      console.warn(`⚠️ No XPath provided for ${field}`);
+      continue;
+    }
+    if (!value) {
+      console.warn(`⚠️ No formData value provided for ${field}`);
+      continue;
+    }
+    try {
+      const [input] = await realPage.$x(xpath);
+      if (!input) {
+        console.warn(`⚠️ Could not find element for ${field} at ${xpath}`);
+        continue;
       }
-    } else {
-      console.warn(`⚠️ No XPath from Claude for ${field}`);
+      console.log("focusing");
+      await input.focus();
+      console.log("Clicking");
+      await input.click({ clickCount: 3 }); 
+
+      console.log("presssing backspace");
+      await input.press('Backspace');
+      console.log("Typing");
+      await input.type(value, { delay: 50 });
+      console.log(`✅ Filled ${field} at ${xpath}`);
+    } catch (error) {
+      console.error(`❌ Error filling ${field}:`, error);
     }
   }
   
-
   await new Promise(res => setTimeout(res, 6000000));
   await browser.close();
 })();
